@@ -43,6 +43,9 @@
 
   .slots-status{font-size:.86rem;color:var(--muted);margin-top:10px}
   .slots-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(74px,1fr));gap:8px;margin-top:10px}
+  .slot-group{margin-top:16px}
+  .slot-group-title{display:flex;align-items:center;gap:8px;font-size:.82rem;font-weight:700;color:var(--navy);margin-bottom:8px}
+  .slot-group-title .cnt{font-weight:600;color:var(--muted);font-size:.76rem}
   .slot-btn{padding:9px 4px;border-radius:7px;border:1.5px solid var(--line);background:#fff;cursor:pointer;
     font-family:inherit;font-weight:600;font-size:.84rem;color:var(--navy)}
   .slot-btn:hover{border-color:var(--gold)}
@@ -108,7 +111,7 @@
     <h2><span class="n">2</span> Pick a date</h2>
     <input type="date" id="dateInput">
     <div class="slots-status" id="slotsStatus"></div>
-    <div class="slots-grid" id="slotsGrid"></div>
+    <div id="slotsGroups"></div>
   </div>
 
   <div class="card" id="step4">
@@ -181,7 +184,7 @@ $('dateInput').addEventListener('change', ()=>{
 });
 
 async function loadSlots(){
-  $('slotsGrid').innerHTML = '';
+  $('slotsGroups').innerHTML = '';
   $('slotsStatus').textContent = 'Loading available times…';
   try{
     const res = await fetch(`${WORKER_URL}/availability?date=${selectedDate}&duration=${selectedDuration}`);
@@ -189,13 +192,29 @@ async function loadSlots(){
     if(!data.ok){ $('slotsStatus').textContent = data.reason || 'Could not load availability.'; return; }
     if(!data.slots.length){ $('slotsStatus').textContent = 'No open times that day — try another date.'; return; }
     $('slotsStatus').textContent = `${data.slots.length} time${data.slots.length>1?'s':''} available:`;
-    data.slots.forEach(t=>{
-      const b = document.createElement('button');
-      b.className = 'slot-btn';
-      b.textContent = to12h(t);
-      b.dataset.time = t;
-      b.onclick = ()=> selectSlot(t, b);
-      $('slotsGrid').appendChild(b);
+
+    const groups = [
+      { label:'☀️ Morning',   test: h => h < 12 },
+      { label:'🌤️ Afternoon', test: h => h >= 12 && h < 17 },
+      { label:'🌙 Evening',   test: h => h >= 17 },
+    ];
+    groups.forEach(g => {
+      const slotsInGroup = data.slots.filter(t => g.test(parseInt(t.split(':')[0],10)));
+      if(!slotsInGroup.length) return;
+      const section = document.createElement('div');
+      section.className = 'slot-group';
+      section.innerHTML = `<div class="slot-group-title">${g.label} <span class="cnt">(${slotsInGroup.length})</span></div>
+        <div class="slots-grid"></div>`;
+      const grid = section.querySelector('.slots-grid');
+      slotsInGroup.forEach(t=>{
+        const b = document.createElement('button');
+        b.className = 'slot-btn';
+        b.textContent = to12h(t);
+        b.dataset.time = t;
+        b.onclick = ()=> selectSlot(t, b);
+        grid.appendChild(b);
+      });
+      $('slotsGroups').appendChild(section);
     });
   }catch(err){
     $('slotsStatus').textContent = 'Network error loading availability. Please try again.';
@@ -211,7 +230,7 @@ function to12h(hm){
 
 function selectSlot(time, btnEl){
   selectedTime = time;
-  $('slotsGrid').querySelectorAll('.slot-btn').forEach(b=>b.classList.remove('sel'));
+  $('slotsGroups').querySelectorAll('.slot-btn').forEach(b=>b.classList.remove('sel'));
   btnEl.classList.add('sel');
   showSummary();
   $('step4').classList.add('show');
