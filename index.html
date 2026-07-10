@@ -37,6 +37,16 @@
     font-family:inherit;font-weight:700;font-size:.88rem;color:var(--navy);transition:.15s}
   .dur-btn.sel{border-color:var(--gold-deep);background:var(--cream-2)}
 
+  .type-row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .type-opt{position:relative}
+  .type-opt input{position:absolute;opacity:0;width:100%;height:100%;margin:0;cursor:pointer}
+  .type-opt .type-card{display:flex;flex-direction:column;align-items:center;gap:4px;padding:12px 6px;
+    border-radius:8px;border:1.5px solid var(--line);background:#fff;font-weight:700;font-size:.84rem;
+    color:var(--navy);text-align:center;transition:.15s;pointer-events:none}
+  .type-opt .type-card .ic{font-size:1.3rem}
+  .type-opt input:checked + .type-card{border-color:var(--gold-deep);background:var(--cream-2)}
+  .type-opt input:focus-visible + .type-card{outline:2px solid var(--gold-deep);outline-offset:1px}
+
   input[type=date]{width:100%;padding:11px 12px;border:1.5px solid var(--line);border-radius:8px;font-family:inherit;
     font-size:.92rem;color:var(--navy)}
   input[type=date]:focus{outline:none;border-color:var(--gold-deep)}
@@ -108,14 +118,31 @@
     </div>
 
     <div style="height:16px"></div>
-    <h2><span class="n">2</span> Pick a date</h2>
+    <h2><span class="n">2</span> How would you like to meet?</h2>
+    <div class="type-row" id="typeRow">
+      <label class="type-opt">
+        <input type="radio" name="meetingType" value="phone" checked>
+        <span class="type-card"><span class="ic">📞</span>Phone Call</span>
+      </label>
+      <label class="type-opt">
+        <input type="radio" name="meetingType" value="zoom">
+        <span class="type-card"><span class="ic">💻</span>Zoom Meeting</span>
+      </label>
+      <label class="type-opt">
+        <input type="radio" name="meetingType" value="in-person">
+        <span class="type-card"><span class="ic">🤝</span>In Person</span>
+      </label>
+    </div>
+
+    <div style="height:16px"></div>
+    <h2><span class="n">3</span> Pick a date</h2>
     <input type="date" id="dateInput">
     <div class="slots-status" id="slotsStatus"></div>
     <div id="slotsGroups"></div>
   </div>
 
   <div class="card" id="step4">
-    <h2><span class="n">3</span> Your contact info</h2>
+    <h2><span class="n">4</span> Your contact info</h2>
     <div class="summary-box" id="summaryBox"></div>
     <div class="f">
       <label>Full name <span class="req">*</span></label>
@@ -130,7 +157,7 @@
       <input type="tel" id="fPhone" placeholder="(416) 555-1234">
     </div>
     <div class="f">
-      <label>Home address <span style="color:var(--muted);font-weight:400">(optional)</span></label>
+      <label>Address <span id="addressHint" style="color:var(--muted);font-weight:400">(optional)</span></label>
       <input type="text" id="fAddress" placeholder="123 Main St, Richmond Hill, ON">
     </div>
     <button class="btn" id="btnSubmit" disabled>Confirm booking</button>
@@ -153,6 +180,7 @@ const WORKER_URL = 'https://peter-booking.peterluo.workers.dev';
 
 const $ = id => document.getElementById(id);
 let selectedDuration = 30;
+let selectedMeetingType = 'phone';
 let selectedDate = null;
 let selectedTime = null;
 
@@ -165,6 +193,20 @@ $('durRow').addEventListener('click', e=>{
   selectedDuration = parseInt(btn.dataset.min,10);
   selectedTime = null;
   if(selectedDate) loadSlots();
+});
+
+/* ---- meeting type picker ---- */
+const MEETING_TYPE_LABELS = { phone:'Phone Call', zoom:'Zoom Meeting', 'in-person':'In Person Meeting' };
+$('typeRow').addEventListener('change', e=>{
+  if(e.target.name !== 'meetingType') return;
+  selectedMeetingType = e.target.value;
+  const hint = $('addressHint');
+  if(selectedMeetingType === 'in-person'){
+    hint.textContent = '(required for in-person meetings)';
+  }else{
+    hint.textContent = '(optional)';
+  }
+  validateForm();
 });
 
 /* ---- date picker ---- */
@@ -240,17 +282,18 @@ function selectSlot(time, btnEl){
 function showSummary(){
   const d = new Date(selectedDate+'T00:00:00');
   const niceDate = d.toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' });
-  $('summaryBox').innerHTML = `<b>${niceDate} at ${to12h(selectedTime)}</b>${selectedDuration}-minute meeting`;
+  $('summaryBox').innerHTML = `<b>${niceDate} at ${to12h(selectedTime)}</b>${selectedDuration}-minute ${MEETING_TYPE_LABELS[selectedMeetingType]}`;
   $('summaryBox').classList.add('show');
 }
 
 /* ---- contact form validation ---- */
-['fName','fEmail','fPhone'].forEach(id=>{
+['fName','fEmail','fPhone','fAddress'].forEach(id=>{
   $(id).addEventListener('input', validateForm);
 });
 function validateForm(){
+  const addressOk = selectedMeetingType !== 'in-person' || $('fAddress').value.trim().length > 0;
   const ok = $('fName').value.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test($('fEmail').value) &&
-    $('fPhone').value.replace(/\D/g,'').length >= 7 && selectedDate && selectedTime;
+    $('fPhone').value.replace(/\D/g,'').length >= 7 && selectedDate && selectedTime && addressOk;
   $('btnSubmit').disabled = !ok;
 }
 
@@ -265,6 +308,7 @@ async function submitBooking(){
     name: $('fName').value.trim(),
     email: $('fEmail').value.trim(),
     phone: $('fPhone').value.trim(),
+    meetingType: selectedMeetingType,
     address: $('fAddress').value.trim(),
     date: selectedDate,
     time: selectedTime,
@@ -301,6 +345,7 @@ function showSuccess(payload, emailSent){
     <div><b>Date:</b> ${niceDate}</div>
     <div><b>Time:</b> ${to12h(payload.time)}</div>
     <div><b>Duration:</b> ${payload.duration} minutes</div>
+    <div><b>Type:</b> ${MEETING_TYPE_LABELS[payload.meetingType] || payload.meetingType}</div>
     <div><b>Name:</b> ${payload.name}</div>
   `;
   const p = document.querySelector('#successCard p');
