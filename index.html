@@ -95,6 +95,7 @@
 
   footer{text-align:center;font-size:.72rem;color:var(--muted);margin-top:20px}
 </style>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 </head>
 <body>
 <div class="wrap">
@@ -160,6 +161,12 @@
       <label>Address <span id="addressHint" style="color:var(--muted);font-weight:400">(optional)</span></label>
       <input type="text" id="fAddress" placeholder="123 Main St, Richmond Hill, ON">
     </div>
+    <!-- Honeypot: real users never see or fill this. Bots that auto-fill every field will. -->
+    <div style="position:absolute;left:-9999px;top:-9999px" aria-hidden="true">
+      <label for="fCompany">Company</label>
+      <input type="text" id="fCompany" name="company" tabindex="-1" autocomplete="off">
+    </div>
+    <div class="cf-turnstile" id="turnstileWidget" data-sitekey="0x4AAAAAADz2ooMMSK-XaTB-" data-callback="onTurnstileSuccess" data-expired-callback="onTurnstileExpired" style="margin:14px 0"></div>
     <button class="btn" id="btnSubmit" disabled>Confirm booking</button>
     <div class="msg" id="formMsg"></div>
   </div>
@@ -179,6 +186,7 @@
 const WORKER_URL = 'https://peter-booking.peterluo.workers.dev';
 
 const $ = id => document.getElementById(id);
+const pageLoadedAt = Date.now();
 let selectedDuration = 30;
 let selectedMeetingType = 'phone';
 let selectedDate = null;
@@ -287,19 +295,35 @@ function showSummary(){
 }
 
 /* ---- contact form validation ---- */
+let turnstileToken = null;
+function onTurnstileSuccess(token){ turnstileToken = token; validateForm(); }
+function onTurnstileExpired(){ turnstileToken = null; validateForm(); }
+
 ['fName','fEmail','fPhone','fAddress'].forEach(id=>{
   $(id).addEventListener('input', validateForm);
 });
 function validateForm(){
   const addressOk = selectedMeetingType !== 'in-person' || $('fAddress').value.trim().length > 0;
   const ok = $('fName').value.trim() && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test($('fEmail').value) &&
-    $('fPhone').value.replace(/\D/g,'').length >= 7 && selectedDate && selectedTime && addressOk;
+    $('fPhone').value.replace(/\D/g,'').length >= 7 && selectedDate && selectedTime && addressOk && turnstileToken;
   $('btnSubmit').disabled = !ok;
 }
 
 $('btnSubmit').addEventListener('click', submitBooking);
 
 async function submitBooking(){
+  // Anti-spam: honeypot field must be empty, and a real person needs at least
+  // a few seconds to fill this form. Both are re-checked on the Worker too —
+  // never trust client-side checks alone, since a bot can call /book directly.
+  if($('fCompany').value.trim() !== ''){
+    // Silently "succeed" so bots don't learn the honeypot was tripped,
+    // without touching the real success UI (which expects a valid date/time).
+    $('btnSubmit').textContent = 'Booking…';
+    setTimeout(()=>{ $('btnSubmit').textContent = 'Confirm booking'; }, 1200);
+    return;
+  }
+  const secondsOnPage = (Date.now() - pageLoadedAt) / 1000;
+
   $('btnSubmit').disabled = true;
   $('btnSubmit').textContent = 'Booking…';
   $('formMsg').className = 'msg';
@@ -312,7 +336,10 @@ async function submitBooking(){
     address: $('fAddress').value.trim(),
     date: selectedDate,
     time: selectedTime,
-    duration: selectedDuration
+    duration: selectedDuration,
+    company: $('fCompany').value.trim(), // honeypot — Worker should reject if non-empty
+    secondsOnPage, // Worker should reject if this is under ~2 seconds
+    turnstileToken
   };
 
   try{
@@ -325,6 +352,8 @@ async function submitBooking(){
       $('formMsg').className = 'msg error show';
       $('btnSubmit').disabled = false;
       $('btnSubmit').textContent = 'Confirm booking';
+      if(window.turnstile) turnstile.reset('#turnstileWidget'); // tokens are single-use
+      turnstileToken = null;
       if(res.status === 409 && selectedDate) loadSlots(); // slot taken — refresh the list
       return;
     }
@@ -334,6 +363,8 @@ async function submitBooking(){
     $('formMsg').className = 'msg error show';
     $('btnSubmit').disabled = false;
     $('btnSubmit').textContent = 'Confirm booking';
+    if(window.turnstile) turnstile.reset('#turnstileWidget');
+    turnstileToken = null;
   }
 }
 
