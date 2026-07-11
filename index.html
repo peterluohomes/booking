@@ -161,10 +161,12 @@
       <label>Address <span id="addressHint" style="color:var(--muted);font-weight:400">(optional)</span></label>
       <input type="text" id="fAddress" placeholder="123 Main St, Richmond Hill, ON">
     </div>
-    <!-- Honeypot: real users never see or fill this. Bots that auto-fill every field will. -->
+    <!-- Honeypot: real users never see or fill this. Bots that auto-fill every field will.
+         Field name/id are deliberately meaningless — common names like "company" or "website"
+         get autofilled by real browsers' saved-profile data even when visually hidden. -->
     <div style="position:absolute;left:-9999px;top:-9999px" aria-hidden="true">
-      <label for="fCompany">Company</label>
-      <input type="text" id="fCompany" name="company" tabindex="-1" autocomplete="off">
+      <label for="hpField">Leave this field blank</label>
+      <input type="text" id="hpField" name="hp_9f3x" tabindex="-1" autocomplete="off">
     </div>
     <div class="cf-turnstile" id="turnstileWidget" data-sitekey="0x4AAAAAADz2ooMMSK-XaTB-" data-callback="onTurnstileSuccess" data-expired-callback="onTurnstileExpired" style="margin:14px 0"></div>
     <button class="btn" id="btnSubmit" disabled>Confirm booking</button>
@@ -315,11 +317,13 @@ async function submitBooking(){
   // Anti-spam: honeypot field must be empty, and a real person needs at least
   // a few seconds to fill this form. Both are re-checked on the Worker too —
   // never trust client-side checks alone, since a bot can call /book directly.
-  if($('fCompany').value.trim() !== ''){
+  if($('hpField').value.trim() !== ''){
     // Silently "succeed" so bots don't learn the honeypot was tripped,
     // without touching the real success UI (which expects a valid date/time).
+    console.warn('Honeypot field was non-empty — treating as spam. If you are a real visitor seeing this, please tell Peter.');
+    $('btnSubmit').disabled = true;
     $('btnSubmit').textContent = 'Booking…';
-    setTimeout(()=>{ $('btnSubmit').textContent = 'Confirm booking'; }, 1200);
+    setTimeout(()=>{ $('btnSubmit').disabled = false; $('btnSubmit').textContent = 'Confirm booking'; }, 1200);
     return;
   }
   const secondsOnPage = (Date.now() - pageLoadedAt) / 1000;
@@ -337,7 +341,7 @@ async function submitBooking(){
     date: selectedDate,
     time: selectedTime,
     duration: selectedDuration,
-    company: $('fCompany').value.trim(), // honeypot — Worker should reject if non-empty
+    company: $('hpField').value.trim(), // honeypot — Worker should reject if non-empty
     secondsOnPage, // Worker should reject if this is under ~2 seconds
     turnstileToken
   };
